@@ -7,9 +7,24 @@ namespace Game
 {
     public class AIController : MonoBehaviour
     {
+        private class ShotResult
+        {
+            public float InitialVelocity { get; set; }
+            public float AngleInDegree { get; set; }
+            public float LandingTimeSeconds { get; set; }
+            public float BulletSpeed { get; set; }
+
+            public override string ToString()
+            {
+                return $"(v0={InitialVelocity}, angle={AngleInDegree}, t={LandingTimeSeconds}, speed={BulletSpeed}";
+            }
+        }
+        
         DefenseState _defenseState;
         int _shootAngle = 45;
         int _power = 0;
+
+        private Dictionary<int, List<(float, float, float)>> prediction = new Dictionary<int, List<(float, float, float)>>();
 
         private void Awake()
         {
@@ -22,6 +37,13 @@ namespace Game
             {
                 _defenseState = manager.GetState();
             }
+
+            CalculateTimePrediction();
+        }
+
+        private void CalculateTimePrediction()
+        {
+            // for (int enemyType = 0; enemyType < 3)
         }
 
         // Update is called once per frame
@@ -32,18 +54,17 @@ namespace Game
             EnemyState nearestEnemy = FindTarget();
             if (nearestEnemy == null) return;
 
-            int nearestPower = DeterminePower(nearestEnemy.pos);
-            if (nearestPower != -1)
+            Vector2 predictedPos = PredictTargetPosition(nearestEnemy.pos, nearestEnemy.speed);
+            ShotResult shot = CalculateShotPath(predictedPos);
+            Debug.Log("Shot result: " + shot);
+
+            if (_defenseState.energy >= DefenseState.ENERGY_SHOT_MAX_CHARGE)
             {
-                DetermineAngle(nearestEnemy.pos);
-                if (_defenseState.energy >= DefenseState.ENERGY_SHOT_MAX_CHARGE)
-                {
-                    _defenseState.DoShootSpecial(_shootAngle, nearestPower);
-                }
-                else
-                {
-                    _defenseState.DoShoot(_shootAngle, nearestPower);
-                }
+                _defenseState.DoShootSpecial(shot.AngleInDegree, shot.InitialVelocity);
+            }
+            else
+            {
+                _defenseState.DoShoot(shot.AngleInDegree, shot.InitialVelocity);
             }
         }
 
@@ -63,37 +84,69 @@ namespace Game
             return nearestEnemy;
         }
 
-        float DetermineAngle(Vector2 target)
+        private ShotResult CalculateShotPath(Vector2 target)
         {
-            float height = target.y + target.magnitude / 2f;
-            height = Mathf.Max(0.01f, height);
+            var (tx, ty) = (target.x, target.y);
+            var g = DefenseState.GRAVITY;
             
-            float angle = Mathf.Atan(Mathf.Sqrt(2 * DefenseState.GRAVITY * height) / target.x);
-            float degreeAngle = angle * Mathf.Rad2Deg;
-            _shootAngle = (int) degreeAngle;
-            return degreeAngle;
+            float height = target.y + target.magnitude / 2f;
+            var h = Mathf.Max(0.01f, height);
+
+            var angle = DetermineAngle(target);
+            var power = DeterminePower(target, angle);
+            var bulletSpeed = DefenseState.POWER_MIN + DefenseState.POWER_BOOST_MAX * Mathf.Clamp01(power * 0.01f);
+            var time = tx / (bulletSpeed * Mathf.Cos(angle * Mathf.Deg2Rad));
+            return new ShotResult()
+            {
+                AngleInDegree = angle,
+                InitialVelocity = power,
+                LandingTimeSeconds = time,
+                BulletSpeed = bulletSpeed
+            };
+        }
+
+        private Vector2 PredictTargetPosition(Vector2 target, float vx)
+        {
+            Vector2 pos = target;
+            float bestDiff = 11111f;
+            Vector2 ret = target + Vector2.left * (vx * DefenseState.FIXED_TIME_STEP);
+            
+            while (pos.x > -vx)
+            {
+                pos.x -= vx * DefenseState.FIXED_TIME_STEP;
+                ShotResult result = CalculateShotPath(pos);
+                var futurePos = target + Vector2.left * (vx * result.LandingTimeSeconds);
+                if (Mathf.Abs(futurePos.x - pos.x) < bestDiff)
+                {
+                    bestDiff = Mathf.Abs(futurePos.x - pos.x);
+                    ret = futurePos;
+                }
+            }
+
+            Debug.Log("Accurate at: " + ret.x + "," + ret.y);
+            return ret;
         }
         
-        int DeterminePower(Vector2 target)
+        private int DeterminePower(Vector2 target, float angleDegree)
         {
-            _power = 10;
-
             var x = target.x;
             var y = target.y;
-            var angle = _shootAngle * Mathf.Deg2Rad;
+            var angle = angleDegree * Mathf.Deg2Rad;
             var g = DefenseState.GRAVITY;
             var vZero = Mathf.Sqrt((Mathf.Pow(x, 2) * g) /
                                    (2 * x * Mathf.Sin(angle) * Mathf.Cos(angle) -
                                     2 * y * Mathf.Pow(Mathf.Cos(angle), 2)));
-            Debug.Log("Power: " + vZero + ", Angle: " + _shootAngle);
-            _power = (int)(vZero * 10f);
+            return (int) Mathf.Min(vZero * 10f, 100);
+        }
+        
+        private float DetermineAngle(Vector2 target)
+        {
+            float height = target.y + target.magnitude / 2f;
+            height = Mathf.Max(0.01f, height);
             
-            // _power += 10;
-            // if(_power > 100)
-            // {
-            //     _power = 0;
-            // }
-            return _power;
+            float angle = Mathf.Atan2(Mathf.Sqrt(2 * DefenseState.GRAVITY * height), target.x);
+            float degreeAngle = angle * Mathf.Rad2Deg;
+            return degreeAngle;
         }
     }
 }
