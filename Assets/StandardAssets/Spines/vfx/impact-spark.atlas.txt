@@ -1,0 +1,34 @@
+
+impact-spark.png
+size: 1442,406
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+impact-spark-1
+  rotate: true
+  xy: 1302, 200
+  size: 204, 138
+  orig: 227, 166
+  offset: 15, 25
+  index: -1
+impact-spark-2
+  rotate: true
+  xy: 966, 26
+  size: 378, 334
+  orig: 392, 359
+  offset: 6, 25
+  index: -1
+impact-spark-3
+  rotate: false
+  xy: 535, 25
+  size: 429, 379
+  orig: 477, 421
+  offset: 24, 25
+  index: -1
+impact-spark-4
+  rotate: false
+  xy: 2, 2
+  size: 531, 402
+  orig: 584, 452
+  offset: 26, 24
+  index: -1

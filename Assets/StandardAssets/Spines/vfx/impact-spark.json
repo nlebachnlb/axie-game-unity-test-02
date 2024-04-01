@@ -1,0 +1,48 @@
+{
+"skeleton": {
+	"hash": "R3rJC2c70ffOlljUz78QPmunayA",
+	"spine": "3.8.79",
+	"x": -227.08,
+	"y": -51.1,
+	"width": 454,
+	"height": 332,
+	"images": "./images/",
+	"audio": ""
+},
+"bones": [
+	{ "name": "root" },
+	{ "name": "impact-spark", "parent": "root" }
+],
+"slots": [
+	{ "name": "impact-spark", "bone": "impact-spark", "attachment": "impact-spark-1" }
+],
+"skins": [
+	{
+		"name": "default",
+		"attachments": {
+			"impact-spark": {
+				"impact-spark-1": { "x": -0.08, "y": 114.9, "width": 454, "height": 332 },
+				"impact-spark-2": { "x": 72.55, "y": 317.69, "width": 784, "height": 718 },
+				"impact-spark-3": { "x": 40.44, "y": 356.6, "width": 954, "height": 842 },
+				"impact-spark-4": { "x": 76.34, "y": 401.05, "width": 1168, "height": 904 }
+			}
+		}
+	}
+],
+"animations": {
+	"animation": {
+		"slots": {
+			"impact-spark": {
+				"attachment": [
+					{ "name": null },
+					{ "time": 0.0333, "name": "impact-spark-1" },
+					{ "time": 0.0667, "name": "impact-spark-2" },
+					{ "time": 0.1, "name": "impact-spark-3" },
+					{ "time": 0.1333, "name": "impact-spark-4" },
+					{ "time": 0.1667, "name": null }
+				]
+			}
+		}
+	}
+}
+}
