@@ -1,12 +1,16 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Game
 {
     public class AIController : MonoBehaviour
     {
+        /// <summary>
+        /// This class contains a calculated shot result
+        /// </summary>
         private class ShotResult
         {
             public float InitialVelocity { get; set; }
@@ -19,12 +23,8 @@ namespace Game
                 return $"(v0={InitialVelocity}, angle={AngleInDegree}, t={LandingTimeSeconds}, speed={BulletSpeed}";
             }
         }
-        
-        DefenseState _defenseState;
-        int _shootAngle = 45;
-        int _power = 0;
 
-        private Dictionary<int, List<(float, float, float)>> prediction = new Dictionary<int, List<(float, float, float)>>();
+        private DefenseState defenseState;
 
         private void Awake()
         {
@@ -35,63 +35,55 @@ namespace Game
             }
             else
             {
-                _defenseState = manager.GetState();
+                defenseState = manager.GetState();
             }
-
-            CalculateTimePrediction();
         }
 
-        private void CalculateTimePrediction()
+        private void Update()
         {
-            // for (int enemyType = 0; enemyType < 3)
-        }
-
-        // Update is called once per frame
-        void Update()
-        {
-            if (_defenseState == null || !_defenseState.isPlaying || _defenseState.playerState.shootDelay > 0) return;
+            if (defenseState == null || !defenseState.isPlaying || defenseState.playerState.shootDelay > 0) return;
 
             EnemyState nearestEnemy = FindTarget();
             if (nearestEnemy == null) return;
 
-            Vector2 predictedPos = PredictTargetPosition(nearestEnemy.pos, nearestEnemy.speed);
+            Vector2 predictedPos = PredictTargetPosition(nearestEnemy.pos - defenseState.playerState.pos, nearestEnemy.speed);
             ShotResult shot = CalculateShotPath(predictedPos);
             Debug.Log("Shot result: " + shot);
 
-            if (_defenseState.energy >= DefenseState.ENERGY_SHOT_MAX_CHARGE)
-            {
-                _defenseState.DoShootSpecial(shot.AngleInDegree, shot.InitialVelocity);
-            }
+            if (defenseState.energy >= DefenseState.ENERGY_SHOT_MAX_CHARGE)
+                defenseState.DoShootSpecial(shot.AngleInDegree, shot.InitialVelocity);
             else
-            {
-                _defenseState.DoShoot(shot.AngleInDegree, shot.InitialVelocity);
-            }
+                defenseState.DoShoot(shot.AngleInDegree, shot.InitialVelocity);
         }
 
-        EnemyState FindTarget()
+        private EnemyState FindTarget()
         {
+            // Focus on fastest enemies
+            var maxSpeed = defenseState.enemyStates.Values.Aggregate(0f, (current, enemy) => Mathf.Max(current, enemy.speed));
+            var candidates = defenseState.enemyStates.Values.Where(e => e.speed >= maxSpeed).ToList();
+            if (candidates.Count == 1) return candidates[0];
+            
+            // Then focus on nearest enemies
             EnemyState nearestEnemy = null;
             float nearestDist = -1;
-            foreach (var p in _defenseState.enemyStates)
+            foreach (var enemy in candidates)
             {
-                var enemy = p.Value;
-                if (nearestEnemy == null || enemy.pos.x < nearestDist)
-                {
-                    nearestDist = enemy.pos.x;
-                    nearestEnemy = enemy;
-                }
+                if (nearestEnemy != null && !(enemy.pos.x < nearestDist)) continue;
+                nearestDist = enemy.pos.x;
+                nearestEnemy = enemy;
             }
             return nearestEnemy;
         }
 
+        /// <summary>
+        /// This method determines angle and power to help Axie shoot exactly at a target position
+        /// </summary>
+        /// <param name="target"> Target's position RELATIVE to Axie (not world position) </param>
+        /// <returns></returns>
         private ShotResult CalculateShotPath(Vector2 target)
         {
             var (tx, ty) = (target.x, target.y);
             var g = DefenseState.GRAVITY;
-            
-            float height = target.y + target.magnitude / 2f;
-            var h = Mathf.Max(0.01f, height);
-
             var angle = DetermineAngle(target);
             var power = DeterminePower(target, angle);
             var bulletSpeed = DefenseState.POWER_MIN + DefenseState.POWER_BOOST_MAX * Mathf.Clamp01(power * 0.01f);
@@ -105,13 +97,19 @@ namespace Game
             };
         }
 
+        /// <summary>
+        /// This method helps Axie with prediction of enemy's position
+        /// </summary>
+        /// <param name="target"> Target's position RELATIVE to Axie (not world position)</param>
+        /// <param name="vx"> Horizontal velocity to calculate prediction of next position</param>
+        /// <returns></returns>
         private Vector2 PredictTargetPosition(Vector2 target, float vx)
         {
+            float bestDiff = Mathf.Infinity;
             Vector2 pos = target;
-            float bestDiff = 11111f;
             Vector2 ret = target + Vector2.left * (vx * DefenseState.FIXED_TIME_STEP);
             
-            while (pos.x > -vx)
+            while (pos.x > -vx * DefenseState.FIXED_TIME_STEP)
             {
                 pos.x -= vx * DefenseState.FIXED_TIME_STEP;
                 ShotResult result = CalculateShotPath(pos);
@@ -123,28 +121,34 @@ namespace Game
                 }
             }
 
-            Debug.Log("Accurate at: " + ret.x + "," + ret.y);
+            // Debug.Log("Accurate at: " + ret.x + "," + ret.y);
             return ret;
         }
         
-        private int DeterminePower(Vector2 target, float angleDegree)
+        // Determine power to shoot bullet at target position relative to ROOT COORDINATE (0, 0)
+        private float DeterminePower(Vector2 target, float angleDegree)
         {
             var x = target.x;
             var y = target.y;
             var angle = angleDegree * Mathf.Deg2Rad;
             var g = DefenseState.GRAVITY;
-            var vZero = Mathf.Sqrt((Mathf.Pow(x, 2) * g) /
+            var v0 = Mathf.Sqrt((Mathf.Pow(x, 2) * g) /
                                    (2 * x * Mathf.Sin(angle) * Mathf.Cos(angle) -
                                     2 * y * Mathf.Pow(Mathf.Cos(angle), 2)));
-            return (int) Mathf.Min(vZero * 10f, 100);
+            return Mathf.Min(v0 * 10f, 100);
         }
         
+        // Determine angle to shoot bullet at target position relative to ROOT COORDINATE (0, 0)
         private float DetermineAngle(Vector2 target)
         {
+            // I see, there is no constraint of min and max height of the bullet path, that means no limit in angle
+            // So I can freely determine the angle mua ha ha :)
+            // (I tried doing this myself by holding left mouse and there is no limit indeed)
+            // So "height" can be negative or positive
             float height = target.y + target.magnitude / 2f;
-            height = Mathf.Max(0.01f, height);
+            float sqrt = Mathf.Sqrt(2 * DefenseState.GRAVITY * Mathf.Abs(height)) * Mathf.Sign(height);
             
-            float angle = Mathf.Atan2(Mathf.Sqrt(2 * DefenseState.GRAVITY * height), target.x);
+            float angle = Mathf.Atan2(sqrt, target.x);
             float degreeAngle = angle * Mathf.Rad2Deg;
             return degreeAngle;
         }
